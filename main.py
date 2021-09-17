@@ -4,8 +4,11 @@ from pytorch_lightning import Trainer
 import argparse
 
 num_labels = {
-    'ChemProt': 6
+    'ChemProt': 6,
+    'DDI': 5,
 }
+
+task_list = ['ChemProt', 'DDI']
 
 parser = argparse.ArgumentParser()
 
@@ -21,6 +24,7 @@ parser.add_argument('--test_file', type=str, default='',
 parser.add_argument('--output_dir', type=str, default='',
                     help='')
 # training configuration
+parser.add_argument('--batch_size', type=int, default=52)
 parser.add_argument('--train_batch_size', type=int, default=32,
                     help='')
 parser.add_argument('--valid_batch_size', type=int, default=32,
@@ -43,7 +47,7 @@ parser.add_argument('--adam_epsilon', type=float, default=1e-8,
                     help='')
 
 # other settings
-parser.add_argument('--task', type=str, default='ChemProt',
+parser.add_argument('--task', type=str, required=True,
                     help='')
 parser.add_argument('--gpus', type=str, default='0')
 parser.add_argument('--dataloader_workers', type=int, default=4,
@@ -51,16 +55,34 @@ parser.add_argument('--dataloader_workers', type=int, default=4,
 
 args = parser.parse_args()
 
+if args.task not in task_list:
+    print('task name: ', args.task)
+    print('please specify a valid task name!, only support: ', task_list)
+    exit('invalid task name')
+
+
+def get_batch_size(purpose='train'):
+    if args.batch_size != 0:
+        return args.batch_size
+    if purpose == 'train':
+        return args.train_batch_size
+    if purpose == 'valid':
+        return args.valid_batch_size
+    if purpose == 'test':
+        return args.test_batch_size
+
+
 data_module = BLUEDataModule(
     model_name_or_path=args.model_name_or_path,
     train_file=args.train_file,
     valid_file=args.valid_file,
     test_file=args.test_file,
-    train_batch_size=args.train_batch_size,
-    valid_batch_size=args.valid_batch_size,
-    test_batch_size=args.test_batch_size,
+    train_batch_size=get_batch_size('train'),
+    valid_batch_size=get_batch_size('valid'),
+    test_batch_size=get_batch_size('test'),
     max_seq_length=args.max_seq_length,
-    num_workers=args.dataloader_workers
+    num_workers=args.dataloader_workers,
+    task=args.task
 )
 data_module.setup()
 
@@ -71,13 +93,13 @@ model = BioBERT(
     adam_epsilon=args.adam_epsilon,
     warmup_steps=args.warm_steps,
     weight_decay=args.weight_decay,
-    train_batch_size=args.train_batch_size,
-    eval_batch_size=args.valid_batch_size
+    train_batch_size=get_batch_size('train'),
+    eval_batch_size=get_batch_size('valid')
 )
 trainer = Trainer(max_epochs=args.epochs,
                   gpus=args.gpus,
                   accelerator='ddp',
-                  check_val_every_n_epoch=1,
+                  check_val_every_n_epoch=3,
                   )
 trainer.fit(model, data_module)
 trainer.test(ckpt_path='best')

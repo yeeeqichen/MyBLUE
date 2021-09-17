@@ -6,7 +6,6 @@ from module.data_module import BLUEDataModule
 
 
 class BioBERT(pl.LightningModule):
-    # todo: update the metrics (F)
     def __init__(self, model_name_or_path,
                  num_labels,
                  task_name='ChemProt',
@@ -54,7 +53,8 @@ class BioBERT(pl.LightningModule):
     def test_epoch_end(self, outputs):
         preds = torch.cat([x['preds'] for x in outputs]).detach().cpu().numpy()
         labels = torch.cat([x['labels'] for x in outputs]).detach().cpu().numpy()
-        precision_mic, recall_mic, f1_score_mic, _ = metrics.precision_recall_fscore_support(labels, preds, average='micro')
+        precision_mic, recall_mic, f1_score_mic, _ = metrics.precision_recall_fscore_support(labels, preds,
+                                                                                             average='micro')
         precision_mac, recall_mac, f1_score_mac, _ = metrics.precision_recall_fscore_support(labels, preds,
                                                                                              average='macro')
         self.log('test_precision_micro', precision_mic, prog_bar=True, sync_dist=True)
@@ -69,14 +69,14 @@ class BioBERT(pl.LightningModule):
         preds = torch.cat([x['preds'] for x in outputs]).detach().cpu().numpy()
         labels = torch.cat([x['labels'] for x in outputs]).detach().cpu().numpy()
         loss = torch.stack([x['loss'] for x in outputs]).mean()
-        precision_mic, recall_mic, f1_score_mic, _ = metrics.precision_recall_fscore_support(labels, preds,
-                                                                                             average='micro')
+        # precision_mic, recall_mic, f1_score_mic, _ = metrics.precision_recall_fscore_support(labels, preds,
+        #                                                                                      average='micro')
         precision_mac, recall_mac, f1_score_mac, _ = metrics.precision_recall_fscore_support(labels, preds,
                                                                                              average='macro')
         self.log('val_loss', loss, prog_bar=True, sync_dist=True)
-        self.log('val_precision_micro', precision_mic, prog_bar=True, sync_dist=True)
-        self.log('val_recall_micro', recall_mic, prog_bar=True, sync_dist=True)
-        self.log('val_f1_micro', f1_score_mic, prog_bar=True, sync_dist=True)
+        # self.log('val_precision_micro', precision_mic, prog_bar=True, sync_dist=True)
+        # self.log('val_recall_micro', recall_mic, prog_bar=True, sync_dist=True)
+        # self.log('val_f1_micro', f1_score_mic, prog_bar=True, sync_dist=True)
         self.log('val_precision_macro', precision_mac, prog_bar=True, sync_dist=True)
         self.log('val_recall_macro', recall_mac, prog_bar=True, sync_dist=True)
         self.log('val_f1_macro', f1_score_mac, prog_bar=True, sync_dist=True)
@@ -124,3 +124,6 @@ class BioBERT(pl.LightningModule):
 # )
 # trainer = pl.Trainer(max_epochs=1, gpus=-1)
 # trainer.fit(model, datamodule)
+from transformers import BertForTokenClassification
+model = BertForTokenClassification.from_pretrained('')
+model.state_dict()

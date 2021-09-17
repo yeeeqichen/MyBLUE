@@ -6,9 +6,10 @@ import argparse
 num_labels = {
     'ChemProt': 6,
     'DDI': 5,
+    'BC5CDR': 4
 }
 
-task_list = ['ChemProt', 'DDI']
+task_list = ['ChemProt', 'DDI', 'BC5CDR']
 
 parser = argparse.ArgumentParser()
 
@@ -88,6 +89,7 @@ data_module.setup()
 
 model = BioBERT(
     model_name_or_path=args.model_name_or_path,
+    task_name=args.task,
     num_labels=num_labels[args.task],
     learning_rate=args.learning_rate,
     adam_epsilon=args.adam_epsilon,

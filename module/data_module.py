@@ -27,6 +27,10 @@ label_map = {
     }
 }
 
+label_padding_for_NER = [3]
+PAD = ['[PAD]']
+CLS = ['[CLS]']
+
 
 class MyDataset(Dataset):
     def __init__(self, file_path, task='ChemProt'):
@@ -41,9 +45,10 @@ class MyDataset(Dataset):
                     label_id = label_map[task][label]
                     self.dataset.append([sentence, label_id])
             elif task == 'BC5CDR':
-                flag = True
-                while flag:
+                while True:
                     flag, words, labels = self._parse_ner_data(f)
+                    if not flag:
+                        break
                     self.dataset.append([words, labels])
         print('total instance:', len(self.dataset))
 
@@ -140,7 +145,7 @@ class BLUEDataModule(pl.LightningDataModule):
                           num_workers=self.num_workers)
 
     def convert_to_features(self, batch_input):
-        features = None
+        features = dict()
         if self.task in ['ChemProt', 'DDI']:
             sentences = [_[0] for _ in batch_input]
             labels = [_[1] for _ in batch_input]
@@ -150,28 +155,50 @@ class BLUEDataModule(pl.LightningDataModule):
                 padding=True,
                 truncation=True,
             )
-            features = dict()
             for key in encode_results.keys():
                 features[key] = torch.LongTensor(encode_results[key])
             features['labels'] = torch.LongTensor(labels)
-        else:
+        elif self.task in ['BC5CDR']:
             batch_words = [_[0] for _ in batch_input]
             batch_labels = [_[1] for _ in batch_input]
-            batch_tokens = []
+            batch_token_ids = []
             batch_label_ids = []
+            batch_masks = []
             for words, labels in zip(batch_words, batch_labels):
                 tokens = []
                 label_ids = []
-                for word, label in zip(words, labels):
-                    word_tokens = self.tokenizer.tokenize(word)
-                    if len(word_tokens) > 0:
-                        tokens.extend(word_tokens)
-                        label_ids.extend([label_map[self.task][label]] + [3] * (len(word_tokens) - 1))
-                batch_tokens.append(tokens)
+                try:
+                    for word, label in zip(words, labels):
+                        # step 1: convert words to tokens, notice that a word will be tokenized into several tokens,
+                        #         hence we need to pad the label_ids with a extra id : 3
+                        word_tokens = self.tokenizer.tokenize(word)
+                        if len(word_tokens) > 0:
+                            tokens += word_tokens
+                            label_ids += [label_map[self.task][label]] + [3] * (len(word_tokens) - 1)
+                except TypeError:
+                    print(words)
+                    print(labels)
+                # step 2: pad the token sequence as well as the label_ids and attention mask
+                if len(tokens) < self.max_seq_length:
+                    masks = [1] * len(tokens) + [0] * (self.max_seq_length - len(tokens))
+                    label_ids += [0] * (self.max_seq_length - len(tokens))
+                    tokens += PAD * (self.max_seq_length - len(tokens))
+                else:
+                    tokens = tokens[:self.max_seq_length]
+                    label_ids = label_ids[:self.max_seq_length]
+                    masks = [1] * self.max_seq_length
+                assert len(tokens) == self.max_seq_length
+                token_ids = self.tokenizer.convert_tokens_to_ids(tokens)
+                assert len(token_ids) == self.max_seq_length
+                batch_token_ids.append(token_ids)
                 batch_label_ids.append(label_ids)
-            # todo: padding to max_seq_length and add special token like '[CLS]'
-            pass
-
+                batch_masks.append(masks)
+            features['input_ids'] = torch.LongTensor(batch_token_ids)
+            # print(features['input_ids'].shape)
+            features['attention_mask'] = torch.LongTensor(batch_masks)
+            # print(features['attention_mask'].shape)
+            features['labels'] = torch.LongTensor(batch_label_ids)
+            # print(features['labels'].shape)
         return features
 
     def setup(self, stage=None):

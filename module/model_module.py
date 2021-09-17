@@ -1,5 +1,11 @@
 import pytorch_lightning as pl
-from transformers import AutoModelForSequenceClassification, AutoConfig, AdamW, get_linear_schedule_with_warmup
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoConfig,
+    AdamW,
+    get_linear_schedule_with_warmup,
+    AutoModelForTokenClassification,
+)
 import torch
 from sklearn import metrics
 from module.data_module import BLUEDataModule
@@ -21,9 +27,11 @@ class BioBERT(pl.LightningModule):
         self.model_name_or_path = model_name_or_path
         self.model_config = AutoConfig.from_pretrained(model_name_or_path, num_labels=num_labels)
         self.model = None
-        if task_name == 'ChemProt':
+        if task_name in ['ChemProt', 'DDI']:
             self.model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path,
                                                                             config=self.model_config)
+        elif task_name in ['BC5CDR']:
+            self.model = AutoModelForTokenClassification.from_pretrained(model_name_or_path, config=self.model_config)
         self.total_steps = None
 
     def forward(self, **inputs):
@@ -37,22 +45,32 @@ class BioBERT(pl.LightningModule):
     def validation_step(self, batch_input, batch_idx, data_loader_idx=0):
         outputs = self(**batch_input)
         val_loss, logits = outputs[:2]
-
-        preds = torch.argmax(logits, axis=1)
-
+        preds = None
+        if self.hparams.task_name in ['ChemProt', 'DDI']:
+            preds = torch.argmax(logits, axis=1)
+        elif self.hparams.task_name in ['BC5CDR']:
+            preds = torch.argmax(logits, axis=2)
         labels = batch_input["labels"]
         return {'loss': val_loss, "preds": preds, "labels": labels}
 
     def test_step(self, batch_input, batch_idx, dataloader_idx=0):
         outputs = self(**batch_input)
         _, logits = outputs[:2]
-        preds = torch.argmax(logits, axis=1)
+        preds = None
+        if self.hparams.task_name in ['ChemProt', 'DDI']:
+            preds = torch.argmax(logits, axis=1)
+        elif self.hparams.task_name in ['BC5CDR']:
+            preds = torch.argmax(logits, axis=2)
         labels = batch_input["labels"]
         return {"preds": preds, "labels": labels}
 
     def test_epoch_end(self, outputs):
-        preds = torch.cat([x['preds'] for x in outputs]).detach().cpu().numpy()
-        labels = torch.cat([x['labels'] for x in outputs]).detach().cpu().numpy()
+        if self.hparams.task_name in ['ChemProt', 'DDI']:
+            preds = torch.cat([x['preds'] for x in outputs]).detach().cpu().numpy()
+            labels = torch.cat([x['labels'] for x in outputs]).detach().cpu().numpy()
+        elif self.hparams.task_name in ['BC5CDR']:
+            preds = torch.cat([x['preds'].view(-1) for x in outputs]).detach().cpu().numpy()
+            labels = torch.cat([x['labels'].view(-1) for x in outputs]).detach().cpu().numpy()
         precision_mic, recall_mic, f1_score_mic, _ = metrics.precision_recall_fscore_support(labels, preds,
                                                                                              average='micro')
         precision_mac, recall_mac, f1_score_mac, _ = metrics.precision_recall_fscore_support(labels, preds,
@@ -66,8 +84,12 @@ class BioBERT(pl.LightningModule):
         return None
 
     def validation_epoch_end(self, outputs):
-        preds = torch.cat([x['preds'] for x in outputs]).detach().cpu().numpy()
-        labels = torch.cat([x['labels'] for x in outputs]).detach().cpu().numpy()
+        if self.hparams.task_name in ['ChemProt', 'DDI']:
+            preds = torch.cat([x['preds'] for x in outputs]).detach().cpu().numpy()
+            labels = torch.cat([x['labels'] for x in outputs]).detach().cpu().numpy()
+        elif self.hparams.task_name in ['BC5CDR']:
+            preds = torch.cat([x['preds'].view(-1) for x in outputs]).detach().cpu().numpy()
+            labels = torch.cat([x['labels'].view(-1) for x in outputs]).detach().cpu().numpy()
         loss = torch.stack([x['loss'] for x in outputs]).mean()
         # precision_mic, recall_mic, f1_score_mic, _ = metrics.precision_recall_fscore_support(labels, preds,
         #                                                                                      average='micro')
@@ -124,6 +146,6 @@ class BioBERT(pl.LightningModule):
 # )
 # trainer = pl.Trainer(max_epochs=1, gpus=-1)
 # trainer.fit(model, datamodule)
-from transformers import BertForTokenClassification
-model = BertForTokenClassification.from_pretrained('')
-model.state_dict()
+# from transformers import BertForTokenClassification
+# model = BertForTokenClassification.from_pretrained('')
+# model.state_dict()
